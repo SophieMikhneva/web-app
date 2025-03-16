@@ -11,6 +11,13 @@
         .priority-list { margin-top: 5px; }
         .priority-item { display: inline-block; padding: 5px; margin: 2px; background: lightblue; cursor: pointer; }
         .hidden { display: none; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 10px; }
+        .tab-button { padding: 10px; cursor: pointer; background: lightgray; border: 1px solid black; }
+        .tab-button.active { background: darkgray; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .route-item { cursor: pointer; color: blue; text-decoration: underline; }
+        .route-item:hover { color: darkblue; }
     </style>
 </head>
 <body>
@@ -110,8 +117,6 @@
         });
 
         function searchRoutes() {
-            console.log("Кнопка 'Найти' нажата"); // Проверяем, вызывается ли функция
-
             const departure = document.getElementById("departure").value.trim();
             const arrival = document.getElementById("arrival").value.trim();
             const date = document.getElementById("date").value;
@@ -131,28 +136,62 @@
             })
             .then(response => response.json())
             .then(data => {
-                console.log("Ответ от сервера:", data); // Логируем ответ сервера
-
                 if (data.error) {
                     document.getElementById("result").innerHTML = `<p style="color:red">${data.error}</p>`;
                     return;
                 }
 
-                const params = new URLSearchParams({
-                    departure: data.departure,
-                    arrival: data.arrival,
-                    totalTime: data.totalTime,
-                    totalPrice: data.totalPrice,
-                    steps: JSON.stringify(data.steps)
-                });
+                function createRouteHTML(route) {
+                    return `<p class="route-item" onclick='openDetails(${JSON.stringify(route)})'>${route.time}, ${route.duration}, ${route.price}₽</p>`;
+                }
 
-                window.location.href = "details.html?" + params.toString();
-            })
-            .catch(error => {
-                console.error("Ошибка запроса:", error);
-                document.getElementById("result").innerHTML = `<p style="color:red">Ошибка сервера: ${error.message}</p>`;
+                document.getElementById("result").innerHTML = `
+                    <div class="tabs">
+                        <button class="tab-button active" onclick="showTab('direct')">Прямые маршруты</button>
+                        <button class="tab-button" onclick="showTab('with_rest')">Отдохнуть в дороге</button>
+                        <button class="tab-button" onclick="showTab('explore')">Посмотреть окрестности</button>
+                    </div>
+
+                    <div id="direct" class="tab-content active">
+                        <h2>Прямые маршруты</h2>
+                        ${data.direct.map(createRouteHTML).join("")}
+                    </div>
+
+                    <div id="with_rest" class="tab-content">
+                        <h2>Маршруты с отдыхом</h2>
+                        ${data.with_rest.map(createRouteHTML).join("")}
+                    </div>
+
+                    <div id="explore" class="tab-content">
+                        <h2>Посмотреть окрестности</h2>
+                        ${data.explore.map(createRouteHTML).join("")}
+                    </div>
+                `;
             });
+        }
+
+        function openDetails(route) {
+            const params = new URLSearchParams({
+                departure: document.getElementById("departure").value,
+                arrival: document.getElementById("arrival").value,
+                totalTime: route.duration,  // Теперь передаем реальное время
+                totalPrice: route.price,  // Теперь передаем реальную цену
+                steps: JSON.stringify(route.steps || [])
+            });
+            console.log("Передача данных в details.html:", params.toString());  // Логируем перед отправкой
+            window.location.href = "details.html?" + params.toString();
+        }
+
+
+
+        function showTab(tab) {
+            document.querySelectorAll(".tab-button").forEach(button => button.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+
+            document.querySelector(`.tab-button[onclick="showTab('${tab}')"]`).classList.add("active");
+            document.getElementById(tab).classList.add("active");
         }
     </script>
 </body>
 </html>
+

@@ -65,19 +65,20 @@
         function displayRouteDetails() {
             const params = getParams();
 
-            // Формируем заголовок маршрута с учетом районов
-            let routeTitle = `${params.departure}`;
-            if (params.departureArea) routeTitle += ` (${params.departureArea})`;
-            routeTitle += ` - ${params.arrival}`;
-            if (params.arrivalArea) routeTitle += ` (${params.arrivalArea})`;
-
-            document.getElementById("route-title").textContent = routeTitle;
-            document.getElementById("total-time").textContent = params.totalTime;
-            document.getElementById("total-price").textContent = params.totalPrice;
+            document.getElementById("route-title").textContent = `${params.departure} - ${params.arrival}`;
+            document.getElementById("total-time").textContent = params.totalTime;  // Используем переданные данные
+            document.getElementById("total-price").textContent = params.totalPrice;  // Используем переданные данные
 
             const steps = JSON.parse(params.steps || "[]");
+            console.log("Полученные steps:", steps);  // Логируем полученные данные
+
             const routeDetails = document.getElementById("route-details");
             routeDetails.innerHTML = "";
+
+            if (steps.length === 0) {
+                routeDetails.innerHTML = "<p>Детальная информация о маршруте отсутствует.</p>";
+                return;
+            }
 
             steps.forEach((step, index) => {
                 const stepDiv = document.createElement("div");
@@ -90,15 +91,14 @@
                 `;
 
                 if (step.transferDuration) {
-                    stepDiv.innerHTML += `
-                        <p><strong>Длительность пересадки:</strong> ${step.transferDuration} часов</p>
-                        <p class="transfer-text">${getRandomTransferText(step.transferDuration)}</p>
-                    `;
+                    stepDiv.innerHTML += `<p><strong>Длительность пересадки:</strong> ${step.transferDuration} часов</p>`;
                 }
 
                 routeDetails.appendChild(stepDiv);
             });
         }
+
+
 
         function buyTicket() {
             window.location.href = "buy-ticket.html";
