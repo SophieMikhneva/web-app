@@ -1,12 +1,14 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+from datetime import datetime
+from brew import get_data_strait, get_data_transfer, sort_routes
 
 HOST = "localhost"
 PORT = 8080
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
-        """ Обработка CORS-запросов """
+        """ Разрешение CORS-запросов """
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -19,47 +21,63 @@ class RequestHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             request_data = json.loads(post_data.decode("utf-8"))
 
-            departure = request_data.get("departure", "Москва")
-            arrival = request_data.get("arrival", "Волгоград")
+            departure = request_data["departure"]
+            arrival = request_data["arrival"]
+            date = request_data["date"]
+            exclusions = request_data.get("exclusions", [])
+            priorities = request_data.get("priorities", [])
 
+            # Проверка на прошедшую дату
+            if datetime.strptime(date, "%Y-%m-%d") < datetime.today():
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "На эту дату маршрутов нет."}).encode("utf-8"))
+                return
+
+            print(f"Получаем данные для {departure} → {arrival} на {date}...")
+
+            # Получаем маршруты, передавая exclusions и priorities
+            direct_routes = get_data_strait(departure, arrival, date, exclusions, priorities)
+            transfer_routes = get_data_transfer(departure, arrival, date, exclusions, priorities)
+
+            # Проверяем, что данные не `None`
+            if direct_routes is None:
+                direct_routes = {"segments": []}
+            if transfer_routes is None:
+                transfer_routes = {"segments": []}
+
+            # Объединяем и сортируем маршруты
+            all_routes = direct_routes.get("segments", []) + transfer_routes.get("segments", [])
+            sorted_routes = sort_routes(all_routes, sort_by="time", transport_priority=priorities, exclude_transport=exclusions)
+
+            # Проверяем, есть ли маршруты
+            if not sorted_routes:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Маршрутов не найдено."}).encode("utf-8"))
+                return
+
+            # Формируем JSON-ответ
             response_data = {
                 "departure": departure,
                 "arrival": arrival,
-                "totalTime": "1 день 23 часа",
-                "totalPrice": "20000",
-                "direct": [  # Прямые маршруты
-                    {"time": "08:00", "duration": "10 ч", "price": 5000},
-                    {"time": "14:30", "duration": "11 ч", "price": 5200}
-                ],
-                "with_rest": [  # Маршруты с отдыхом
-                    {"time": "18:00", "duration": "15 ч", "price": 4800}
-                ],
-                "explore": [  # Маршруты через другие города
-                    {"time": "06:45", "duration": "20 ч", "price": 5500}
-                ],
-                "steps": [  # Детальная информация о маршруте
-                    {
-                        "departureTime": "01:59", "departureStation": "Павелецкий вокзал", "departureCity": "Москва",
-                        "transport": "Поезд", "arrivalTime": "11:22", "arrivalStation": "Придача", "arrivalCity": "Воронеж",
-                        "transferDuration": 13
-                    },
-                    {
-                        "departureTime": "00:53", "departureStation": "Придача", "departureCity": "Воронеж",
-                        "transport": "Поезд", "arrivalTime": "12:28", "arrivalStation": "Ростов Главный", "arrivalCity": "Ростов-на-Дону",
-                        "transferDuration": 2.5
-                    },
-                    {
-                        "departureTime": "15:00", "departureStation": "Ростов Главный", "departureCity": "Ростов-на-Дону",
-                        "transport": "Поезд", "arrivalTime": "01:46", "arrivalStation": "Волгоград-1", "arrivalCity": "Волгоград"
-                    }
-                ]
+                "totalTime": sorted_routes[0]["duration"] if sorted_routes else "Неизвестно",
+                "totalPrice": sorted_routes[0]["price"] if sorted_routes and sorted_routes[0]["price"] else "Неизвестно",
+                "direct": [r for r in sorted_routes if r["transport_type"] == "plane"],
+                "with_rest": [r for r in sorted_routes if r["transport_type"] == "train"],
+                "explore": [r for r in sorted_routes if r["transport_type"] == "bus"]
             }
 
+            # Отправляем данные обратно
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(json.dumps(response_data).encode("utf-8"))
+            self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode("utf-8"))
 
 def run():
     server = HTTPServer((HOST, PORT), RequestHandler)

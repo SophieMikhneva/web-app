@@ -19,16 +19,17 @@
 </head>
 <body>
     <div class="container">
-        <h1 class="route-title">Маршрут: <span id="route-title"></span></h1>
+        <h1 class="route-title">Маршрут: <span id="route-title">Загрузка...</span></h1>
 
         <div class="summary">
-            <p><strong>Общее время в пути:</strong> <span id="total-time"></span></p>
-            <p><strong>Полная стоимость:</strong> <span id="total-price"></span> руб.</p>
+            <p><strong>Общее время в пути:</strong> <span id="total-time">Загрузка...</span></p>
+            <p><strong>Полная стоимость:</strong> <span id="total-price">Загрузка...</span> руб.</p>
         </div>
 
         <div id="route-details"></div>
 
         <button class="button" onclick="buyTicket()">КУПИТЬ ЕДИНЫЙ БИЛЕТ</button>
+
     </div>
 
     <script>
@@ -62,48 +63,48 @@
             }
         }
 
+        function getParams() {
+            return Object.fromEntries(new URLSearchParams(window.location.search));
+}
+
         function displayRouteDetails() {
             const params = getParams();
 
-            document.getElementById("route-title").textContent = `${params.departure} - ${params.arrival}`;
-            document.getElementById("total-time").textContent = params.totalTime;  // Используем переданные данные
-            document.getElementById("total-price").textContent = params.totalPrice;  // Используем переданные данные
+            // Проверяем, пришли ли корректные данные
+            const departure = params.departure || "Неизвестно";
+            const arrival = params.arrival || "Неизвестно";
+            const totalTime = params.totalTime || "Неизвестно";
+            const totalPrice = params.totalPrice || "Неизвестно";
+            const steps = params.steps ? JSON.parse(params.steps) : [];
 
-            const steps = JSON.parse(params.steps || "[]");
-            console.log("Полученные steps:", steps);  // Логируем полученные данные
+            // Устанавливаем заголовок маршрута
+            document.getElementById("route-title").textContent = `${departure} - ${arrival}`;
+            document.getElementById("total-time").textContent = totalTime;
+            document.getElementById("total-price").textContent = totalPrice;
 
+            // Отображаем детали маршрута
             const routeDetails = document.getElementById("route-details");
-            routeDetails.innerHTML = "";
-
-            if (steps.length === 0) {
-                routeDetails.innerHTML = "<p>Детальная информация о маршруте отсутствует.</p>";
-                return;
-            }
+            routeDetails.innerHTML = steps.length > 0 ? "" : "<p>Детальная информация о маршруте отсутствует.</p>";
 
             steps.forEach((step, index) => {
                 const stepDiv = document.createElement("div");
                 stepDiv.classList.add("step");
-
                 stepDiv.innerHTML = `
                     <p><strong>${index === 0 ? "Отправление:" : "Пересадка:"}</strong> ${step.departureTime} — <span class="station">${step.departureStation}</span> / ${step.departureCity}</p>
                     <p class="highlight">${step.transport}</p>
                     <p><strong>Прибытие:</strong> ${step.arrivalTime} — <span class="station">${step.arrivalStation}</span> / ${step.arrivalCity}</p>
                 `;
-
-                if (step.transferDuration) {
-                    stepDiv.innerHTML += `<p><strong>Длительность пересадки:</strong> ${step.transferDuration} часов</p>`;
-                }
-
                 routeDetails.appendChild(stepDiv);
             });
         }
 
+        // Загружаем данные после загрузки страницы
+        document.addEventListener("DOMContentLoaded", displayRouteDetails);
 
 
         function buyTicket() {
             window.location.href = "buy-ticket.html";
         }
-
         displayRouteDetails();
     </script>
 </body>

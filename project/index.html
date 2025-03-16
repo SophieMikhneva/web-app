@@ -61,7 +61,7 @@
         </select>
     </label><br>
 
-    <label>Приоритеты:</label><br>
+    <label>Приоритеты (кликайте по порядку):</label><br>
     <div>
         <button onclick="addPriority('самолёт')">Самолёт</button>
         <button onclick="addPriority('поезд')">Поезд</button>
@@ -74,11 +74,12 @@
     <div class="result" id="result"></div>
 
     <script>
-        let priorities = [];
+        let prioritiesList = [];
 
         function checkCity(type) {
             const city = document.getElementById(type).value.trim().toLowerCase();
             const districtDiv = document.getElementById(`${type}-district`);
+
             if (city === "москва" || city === "санкт-петербург") {
                 districtDiv.classList.remove("hidden");
             } else {
@@ -88,8 +89,8 @@
         }
 
         function addPriority(type) {
-            if (!priorities.includes(type)) {
-                priorities.push(type);
+            if (!prioritiesList.includes(type)) {
+                prioritiesList.push(type);
                 updatePriorityDisplay();
             }
         }
@@ -97,7 +98,7 @@
         function updatePriorityDisplay() {
             const priorityList = document.getElementById("priorityList");
             priorityList.innerHTML = "";
-            priorities.forEach((item, index) => {
+            prioritiesList.forEach((item, index) => {
                 const element = document.createElement("span");
                 element.className = "priority-item";
                 element.textContent = `${index + 1}. ${item}`;
@@ -107,7 +108,7 @@
         }
 
         function removePriority(type) {
-            priorities = priorities.filter(item => item !== type);
+            prioritiesList = prioritiesList.filter(item => item !== type);
             updatePriorityDisplay();
         }
 
@@ -116,16 +117,14 @@
         function searchRoutes() {
             const departure = document.getElementById("departure").value.trim();
             const arrival = document.getElementById("arrival").value.trim();
-            const dateInput = document.getElementById("date").value;
-            const departureArea = document.getElementById("departure-area").value;
-            const arrivalArea = document.getElementById("arrival-area").value;
+            const date = document.getElementById("date").value;
 
-            if (!departure || !arrival || !dateInput) {
+            if (!departure || !arrival || !date) {
                 document.getElementById("result").innerHTML = `<p style="color:red">Заполните все поля!</p>`;
                 return;
             }
 
-            const selectedDate = new Date(dateInput);
+            const selectedDate = new Date(date);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -137,37 +136,37 @@
             fetch("http://localhost:8080/search", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ departure, arrival, date: dateInput, priorities, departureArea, arrivalArea })
+                body: JSON.stringify({ departure, arrival, date, priorities: prioritiesList })
             })
             .then(response => response.json())
             .then(data => {
+                if (data.error) {
+                    document.getElementById("result").innerHTML = `<p style="color:red">${data.error}</p>`;
+                    return;
+                }
+
+                function createRouteHTML(route) {
+                    return `
+                        <p class="route-item" onclick='openDetails(${JSON.stringify(route)})'>
+                            <strong>Время отправления:</strong> ${route.departure_time} <br>
+                            <strong>Длительность:</strong> ${route.duration} мин <br>
+                            <strong>Цена:</strong> ${route.price ? route.price + " ₽" : "Неизвестно"} <br>
+                        </p>
+                    `;
+                }
+
                 document.getElementById("result").innerHTML = `
                     <div class="tabs">
                         <button class="tab-button active" onclick="showTab('direct')">Прямые маршруты</button>
                         <button class="tab-button" onclick="showTab('with_rest')">Отдохнуть в дороге</button>
                         <button class="tab-button" onclick="showTab('explore')">Посмотреть окрестности</button>
                     </div>
-                    <div id="direct" class="tab-content active">
-                        <h2>Прямые маршруты</h2>
-                        ${data.direct.map(route => `<p class="route-item" onclick='openDetails(${JSON.stringify(route)})'>${route.time}, ${route.duration}, ${route.price}₽</p>`).join("")}
-                    </div>
-                    <div id="with_rest" class="tab-content">
-                        <h2>Маршруты с отдыхом</h2>
-                        ${data.with_rest.map(route => `<p class="route-item" onclick='openDetails(${JSON.stringify(route)})'>${route.time}, ${route.duration}, ${route.price}₽</p>`).join("")}
-                    </div>
-                    <div id="explore" class="tab-content">
-                        <h2>Посмотреть окрестности</h2>
-                        ${data.explore.map(route => `<p class="route-item" onclick='openDetails(${JSON.stringify(route)})'>${route.time}, ${route.duration}, ${route.price}₽</p>`).join("")}
-                    </div>
+
+                    <div id="direct" class="tab-content active">${data.direct.map(createRouteHTML).join("")}</div>
+                    <div id="with_rest" class="tab-content">${data.with_rest.map(createRouteHTML).join("")}</div>
+                    <div id="explore" class="tab-content">${data.explore.map(createRouteHTML).join("")}</div>
                 `;
             });
-        }
-
-        function showTab(tab) {
-            document.querySelectorAll(".tab-button").forEach(button => button.classList.remove("active"));
-            document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
-            document.getElementById(tab).classList.add("active");
-            document.querySelector(`.tab-button[onclick="showTab('${tab}')"]`).classList.add("active");
         }
 
         function openDetails(route) {
@@ -175,10 +174,20 @@
                 departure: document.getElementById("departure").value,
                 arrival: document.getElementById("arrival").value,
                 totalTime: route.duration,
-                totalPrice: route.price,
+                totalPrice: route.price || "Неизвестно",
                 steps: JSON.stringify(route.steps || [])
             });
+
+            console.log("Передача данных в details.html:", params.toString()); // Логируем перед отправкой
             window.location.href = "details.html?" + params.toString();
+        }
+
+
+
+        function showTab(tab) {
+            document.querySelectorAll(".tab-button").forEach(button => button.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+            document.getElementById(tab).classList.add("active");
         }
     </script>
 </body>
