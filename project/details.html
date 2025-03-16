@@ -64,7 +64,14 @@
 
         function displayRouteDetails() {
             const params = getParams();
-            document.getElementById("route-title").textContent = `${params.departure} - ${params.arrival}`;
+
+            // Формируем заголовок маршрута с учетом районов
+            let routeTitle = `${params.departure}`;
+            if (params.departureArea) routeTitle += ` (${params.departureArea})`;
+            routeTitle += ` - ${params.arrival}`;
+            if (params.arrivalArea) routeTitle += ` (${params.arrivalArea})`;
+
+            document.getElementById("route-title").textContent = routeTitle;
             document.getElementById("total-time").textContent = params.totalTime;
             document.getElementById("total-price").textContent = params.totalPrice;
 

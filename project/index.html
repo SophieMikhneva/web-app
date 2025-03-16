@@ -73,7 +73,7 @@
             const city = document.getElementById(type).value.trim().toLowerCase();
             const districtDiv = document.getElementById(`${type}-district`);
 
-            if (city === "Москва" || city === "Санкт-петербург") {
+            if (city === "москва" || city === "санкт-петербург") {
                 districtDiv.classList.remove("hidden");
             } else {
                 districtDiv.classList.add("hidden");
@@ -105,11 +105,13 @@
             updatePriorityDisplay();
         }
 
-        document.getElementById("search-button").addEventListener("click", function() {
-            searchRoutes();
+        document.addEventListener("DOMContentLoaded", function () {
+            document.getElementById("search-button").addEventListener("click", searchRoutes);
         });
 
         function searchRoutes() {
+            console.log("Кнопка 'Найти' нажата"); // Проверяем, вызывается ли функция
+
             const departure = document.getElementById("departure").value.trim();
             const arrival = document.getElementById("arrival").value.trim();
             const date = document.getElementById("date").value;
@@ -129,6 +131,8 @@
             })
             .then(response => response.json())
             .then(data => {
+                console.log("Ответ от сервера:", data); // Логируем ответ сервера
+
                 if (data.error) {
                     document.getElementById("result").innerHTML = `<p style="color:red">${data.error}</p>`;
                     return;
@@ -145,6 +149,7 @@
                 window.location.href = "details.html?" + params.toString();
             })
             .catch(error => {
+                console.error("Ошибка запроса:", error);
                 document.getElementById("result").innerHTML = `<p style="color:red">Ошибка сервера: ${error.message}</p>`;
             });
         }
