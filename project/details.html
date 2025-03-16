@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Детали маршрута</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 900px; margin: auto; padding: 20px; border: 2px solid black; border-radius: 10px; position: relative; }
+        .route-title { font-size: 24px; font-weight: bold; border: 2px solid black; display: inline-block; padding: 5px 10px; margin-bottom: 20px; }
+        .step { border-left: 2px solid black; padding-left: 10px; margin-bottom: 20px; }
+        .station { font-weight: bold; }
+        .transfer-text { font-style: italic; color: #555; }
+        .summary { position: absolute; top: 20px; right: 20px; text-align: right; font-size: 18px; border: 2px solid black; padding: 10px; background: white; }
+        .button { display: block; width: 100%; padding: 15px; margin-top: 20px; font-size: 18px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; text-align: center; font-weight: bold; }
+        .button:hover { background: #218838; }
+        .highlight { border: 2px solid black; display: inline-block; padding: 2px 5px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="route-title">Маршрут: <span id="route-title"></span></h1>
+
+        <div class="summary">
+            <p><strong>Общее время в пути:</strong> <span id="total-time"></span></p>
+            <p><strong>Полная стоимость:</strong> <span id="total-price"></span> руб.</p>
+        </div>
+
+        <div id="route-details"></div>
+
+        <button class="button" onclick="buyTicket()">КУПИТЬ ЕДИНЫЙ БИЛЕТ</button>
+    </div>
+
+    <script>
+        function getParams() {
+            return Object.fromEntries(new URLSearchParams(window.location.search));
+        }
+
+        function getRandomTransferText(delay) {
+            const shortTransfer = [
+                "Вам необходимо проследовать туда-то. Не забудьте выпить кофе по дороге!",
+                "Пересадка короткая, но у вас есть время купить сэндвич!",
+                "Успевайте на следующий транспорт, но не забудьте купить воду!"
+            ];
+            const mediumTransfer = [
+                "У вас есть время посмотреть город или поработать в кафе!",
+                "Расслабьтесь! Есть время прогуляться по парку.",
+                "Вы можете исследовать местный рынок или посидеть в уютной кофейне."
+            ];
+            const longTransfer = [
+                "Ого! У вас есть время посмотреть столько достопримечательностей!",
+                "Такой длинной пересадки ещё не было! Исследуйте город или устройтесь поудобнее.",
+                "Можно даже успеть съездить в музей или на экскурсию."
+            ];
+
+            if (delay <= 3) {
+                return shortTransfer[Math.floor(Math.random() * shortTransfer.length)];
+            } else if (delay <= 8) {
+                return mediumTransfer[Math.floor(Math.random() * mediumTransfer.length)];
+            } else {
+                return longTransfer[Math.floor(Math.random() * longTransfer.length)];
+            }
+        }
+
+        function displayRouteDetails() {
+            const params = getParams();
+            document.getElementById("route-title").textContent = `${params.departure} - ${params.arrival}`;
+            document.getElementById("total-time").textContent = params.totalTime;
+            document.getElementById("total-price").textContent = params.totalPrice;
+
+            const steps = JSON.parse(params.steps || "[]");
+            const routeDetails = document.getElementById("route-details");
+            routeDetails.innerHTML = "";
+
+            steps.forEach((step, index) => {
+                const stepDiv = document.createElement("div");
+                stepDiv.classList.add("step");
+
+                stepDiv.innerHTML = `
+                    <p><strong>${index === 0 ? "Отправление:" : "Пересадка:"}</strong> ${step.departureTime} — <span class="station">${step.departureStation}</span> / ${step.departureCity}</p>
+                    <p class="highlight">${step.transport}</p>
+                    <p><strong>Прибытие:</strong> ${step.arrivalTime} — <span class="station">${step.arrivalStation}</span> / ${step.arrivalCity}</p>
+                `;
+
+                if (step.transferDuration) {
+                    stepDiv.innerHTML += `
+                        <p><strong>Длительность пересадки:</strong> ${step.transferDuration} часов</p>
+                        <p class="transfer-text">${getRandomTransferText(step.transferDuration)}</p>
+                    `;
+                }
+
+                routeDetails.appendChild(stepDiv);
+            });
+        }
+
+        function buyTicket() {
+            window.location.href = "buy-ticket.html";
+        }
+
+        displayRouteDetails();
+    </script>
+</body>
+</html>

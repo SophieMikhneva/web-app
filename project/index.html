@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поиск маршрутов</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        input, select, button { margin: 5px; padding: 10px; }
+        .result { margin-top: 20px; }
+        .priority-list { margin-top: 5px; }
+        .priority-item { display: inline-block; padding: 5px; margin: 2px; background: lightblue; cursor: pointer; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Поиск маршрутов</h1>
+
+    <label>Город отправления: <input type="text" id="departure" oninput="checkCity('departure')"></label><br>
+    <div id="departure-district" class="hidden">
+        <label>Район отправления:
+            <select id="departure-area">
+                <option value="">Выберите район</option>
+                <option value="Центральный">Центральный</option>
+                <option value="Южный">Южный</option>
+                <option value="Северный">Северный</option>
+                <option value="Восточный">Восточный</option>
+                <option value="Западный">Западный</option>
+            </select>
+        </label>
+    </div><br>
+
+    <label>Город прибытия: <input type="text" id="arrival" oninput="checkCity('arrival')"></label><br>
+    <div id="arrival-district" class="hidden">
+        <label>Район прибытия:
+            <select id="arrival-area">
+                <option value="">Выберите район</option>
+                <option value="Центральный">Центральный</option>
+                <option value="Южный">Южный</option>
+                <option value="Северный">Северный</option>
+                <option value="Восточный">Восточный</option>
+                <option value="Западный">Западный</option>
+            </select>
+        </label>
+    </div><br>
+
+    <label>Дата (YYYY-MM-DD): <input type="date" id="date"></label><br>
+
+    <label>Отказ от транспорта:
+        <select id="exclusions" multiple>
+            <option value="самолёт">Самолёт</option>
+            <option value="поезд">Поезд</option>
+            <option value="автобус">Автобус</option>
+        </select>
+    </label><br>
+
+    <label>Приоритеты (кликайте по порядку):</label><br>
+    <div>
+        <button onclick="addPriority('самолёт')">Самолёт</button>
+        <button onclick="addPriority('поезд')">Поезд</button>
+        <button onclick="addPriority('автобус')">Автобус</button>
+    </div>
+    <div id="priorityList" class="priority-list"></div>
+
+    <button id="search-button">Найти</button>
+
+    <div class="result" id="result"></div>
+
+    <script>
+        let priorities = [];
+
+        function checkCity(type) {
+            const city = document.getElementById(type).value.trim().toLowerCase();
+            const districtDiv = document.getElementById(`${type}-district`);
+
+            if (city === "Москва" || city === "Санкт-петербург") {
+                districtDiv.classList.remove("hidden");
+            } else {
+                districtDiv.classList.add("hidden");
+                document.getElementById(`${type}-area`).value = ""; // Сбрасываем выбор района
+            }
+        }
+
+        function addPriority(type) {
+            if (!priorities.includes(type)) {
+                priorities.push(type);
+                updatePriorityDisplay();
+            }
+        }
+
+        function updatePriorityDisplay() {
+            const priorityList = document.getElementById("priorityList");
+            priorityList.innerHTML = "";
+            priorities.forEach((item, index) => {
+                const element = document.createElement("span");
+                element.className = "priority-item";
+                element.textContent = `${index + 1}. ${item}`;
+                element.onclick = () => removePriority(item);
+                priorityList.appendChild(element);
+            });
+        }
+
+        function removePriority(type) {
+            priorities = priorities.filter(item => item !== type);
+            updatePriorityDisplay();
+        }
+
+        document.getElementById("search-button").addEventListener("click", function() {
+            searchRoutes();
+        });
+
+        function searchRoutes() {
+            const departure = document.getElementById("departure").value.trim();
+            const arrival = document.getElementById("arrival").value.trim();
+            const date = document.getElementById("date").value;
+            const exclusions = Array.from(document.getElementById("exclusions").selectedOptions).map(opt => opt.value);
+            const departureArea = document.getElementById("departure-area").value;
+            const arrivalArea = document.getElementById("arrival-area").value;
+
+            if (!departure || !arrival || !date) {
+                document.getElementById("result").innerHTML = `<p style="color:red">Заполните все поля!</p>`;
+                return;
+            }
+
+            fetch("http://localhost:8080/search", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ departure, arrival, date, exclusions, priorities, departureArea, arrivalArea })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById("result").innerHTML = `<p style="color:red">${data.error}</p>`;
+                    return;
+                }
+
+                const params = new URLSearchParams({
+                    departure: data.departure,
+                    arrival: data.arrival,
+                    totalTime: data.totalTime,
+                    totalPrice: data.totalPrice,
+                    steps: JSON.stringify(data.steps)
+                });
+
+                window.location.href = "details.html?" + params.toString();
+            })
+            .catch(error => {
+                document.getElementById("result").innerHTML = `<p style="color:red">Ошибка сервера: ${error.message}</p>`;
+            });
+        }
+    </script>
+</body>
+</html>
