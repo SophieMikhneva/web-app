@@ -1,8 +1,9 @@
-import requests
-key = 'c219b14b-3858-49c3-b674-05efd8b6175b'
+import requests # библиотека для API запросов
+key = 'c219b14b-3858-49c3-b674-05efd8b6175b' #наш ключ с API Яндекс.Расписаний
 
+#Создадим словарь со всеми городами России
 
-url = f'https://api.rasp.yandex.net/v3.0/stations_list/?apikey={key}&lang=ru_RU&format=json'
+url = f'https://api.rasp.yandex.net/v3.0/stations_list/?apikey={key}&lang=ru_RU&format=json' #Выдаёт все доступные станции
 response = requests.get(url)
 if response.status_code == 200:
     station = response.json()
@@ -45,14 +46,11 @@ def extract_russian_cities(data):
                     russian_cities[city_info['title']] = [city_info['yandex_code'], city_info['stations']]
             break  # Выходим после обработки России
 
-    return russian_cities  # {'cities': russian_cities}
-
+    return russian_cities
 
 # Пример использования
 russian_cities = extract_russian_cities(station)
-
-
-
+#Найдем большие города, через которые будет интересно делать пересадки
 big_towns = {'Калининград': 'c22',
  'Мурманск': 'c23',
  'Петрозаводск': 'c18',
@@ -194,17 +192,18 @@ big_towns = {'Калининград': 'c22',
  'Хабаровск': 'c76',
  'Комсомольск-на-Амуре': 'c11453'}
 
-
+#Функция для получения Яндекс-кода города
 def get_code(town):
     return russian_cities[town][0]
 
-
+#Функция для получения географического расположения города
 def get_coordinates(town):
     for k in range(len(russian_cities[town][1])):
         if russian_cities[town][1][k]['coordinates']['latitude'] != '' and russian_cities[town][1][k]['coordinates'][
             'longitude'] != '':
             return russian_cities[town][1][k]['coordinates']
 
+#Функция для получения примерного расстояния по прямой между городами 1 и 2
 def get_distance(town_1, town_2):
     coordinates_town_1 = get_coordinates(town_1)
     coordinates_town_2 = get_coordinates(town_2)
@@ -213,6 +212,7 @@ def get_distance(town_1, town_2):
     else:
         return (town_2)
 
+#Функция для получения списка ближайших городов
 def get_nearby_town(from_town, to_town, distance, big_towns):
     four_nearby_dictanse = []
     i = 1.2
@@ -228,51 +228,20 @@ def get_nearby_town(from_town, to_town, distance, big_towns):
     four_nearby=[i[0] for i in four_nearby_dictanse]
     return four_nearby[:4]
 
-
-def get_data_strait(from_town, to_town, time, exclusions=None, priorities=None):
+#Функция для получения расписания прямых рейсов
+def get_data_strait(from_town, to_town, time):
     code_from_town = get_code(from_town)
     code_to_town = get_code(to_town)
-    url_strait = f"https://api.rasp.yandex.net/v3.0/search/?apikey={key}&format=json&from={code_from_town}&to={code_to_town}&lang=ru_RU&page=1&date={time}"
-
+    url_strait = f"https://api.rasp.yandex.net/v3.0/search/?apikey=c219b14b-3858-49c3-b674-05efd8b6175b&format=json&from={code_from_town}&to={code_to_town}&lang=ru_RU&page=1&date={time}"
     response = requests.get(url_strait)
+
     if response.status_code == 200:
         data_strait = response.json()
-        if "segments" in data_strait:
-            # Фильтруем маршруты по исключенным видам транспорта
-            filtered_routes = [s for s in data_strait["segments"] if s["thread"]["transport_type"] not in exclusions]
-            return {"segments": filtered_routes}
-        else:
-            print("Ошибка: Нет сегментов в прямых маршрутах!")
-            return {"segments": []}
+        return data_strait
     else:
-        print(f"Ошибка запроса {response.status_code}: {response.text}")
-        return {"segments": []}
+        return("Ошибка:", response.status_code)
 
-
-def get_data_transfer(from_town, to_town, time, exclusions=None, priorities=None):
-    code_from_town = get_code(from_town)
-    code_to_town = get_code(to_town)
-    data_strait = get_data_strait(from_town, to_town, time, exclusions, priorities)
-
-    url_transfer = f"https://api.rasp.yandex.net/v3.0/search/?apikey={key}&format=json&from={code_from_town}&to={code_to_town}&lang=ru_RU&page=1&date={time}&transfers=True"
-
-    if data_strait["segments"] == []:
-        response = requests.get(url_transfer)
-        if response.status_code == 200:
-            data_transfer = response.json()
-            if "segments" in data_transfer:
-                # Фильтруем маршруты по исключенным видам транспорта
-                filtered_routes = [s for s in data_transfer["segments"] if
-                                   s["thread"]["transport_type"] not in exclusions]
-                return {"segments": filtered_routes}
-            else:
-                print("Ошибка: Нет сегментов в маршрутах с пересадками!")
-                return {"segments": []}
-        else:
-            print(f"Ошибка запроса {response.status_code}: {response.text}")
-            return {"segments": []}
-
-
+#Функция для сортировки расписания прямых рейсов и вывода основных характеристик маршрута
 def sort_routes(segments, sort_by='time', transport_priority=None, exclude_transport=None):
     if transport_priority is None:
         transport_priority = []
@@ -329,3 +298,71 @@ def sort_routes(segments, sort_by='time', transport_priority=None, exclude_trans
         })
 
     return result
+
+
+#Функция для получения расписания стыковочных рейсов, если отсутствуют прямые
+
+def get_data_transfer(from_town, to_town, time):
+    code_from_town = get_code(from_town)
+    code_to_town = get_code(to_town)
+    data_strait = get_data_strait(from_town, to_town, time)
+    url_transfer = f"https://api.rasp.yandex.net/v3.0/search/?apikey=c219b14b-3858-49c3-b674-05efd8b6175b&format=json&from={code_from_town}&to={code_to_town}&lang=ru_RU&page=1&date={time}&transfers=True"
+    if data_strait['pagination']['total']==0:
+        response = requests.get(url_transfer)
+        if response.status_code == 200:
+            data_transfer = response.json()
+            return data_transfer
+        else:
+            return("Ошибка:", response.status_code)
+
+
+#Пример работы всей этой ерунды для прямого рейса
+from_town = 'Симферополь'
+to_town = 'Москва'
+time = '2025-03-20'
+#transport_priority=None
+#exclude_transport=None
+
+data = get_data_strait(from_town, to_town, time)
+sort_routes(data['segments'], sort_by='time')
+
+'''[{'departure_time': '2025-03-20T18:05:00+03:00',
+  'arrival_time': '2025-03-21T23:50:00+03:00',
+  'duration': 107100.0,
+  'price': None,
+  'from': 'Симферополь-Пасс.',
+  'to': 'Москва (Казанский вокзал)',
+  'name': 'Симферополь — Москва',
+  'transport_type': 'train'},
+ {'departure_time': '2025-03-20T19:50:00+03:00',
+  'arrival_time': '2025-03-22T06:10:00+03:00',
+  'duration': 123600.0,
+  'price': None,
+  'from': 'Симферополь-Пасс.',
+  'to': 'Москва (Казанский вокзал)',
+  'name': 'Симферополь — Москва',
+  'transport_type': 'train'},
+ {'departure_time': '2025-03-20T23:10:00+03:00',
+  'arrival_time': '2025-03-22T10:00:00+03:00',
+  'duration': 125400.0,
+  'price': None,
+  'from': 'Симферополь-Пасс.',
+  'to': 'Москва (Казанский вокзал)',
+  'name': 'Севастополь — Москва',
+  'transport_type': 'train'},
+ {'departure_time': '2025-03-20T22:20:00+03:00',
+  'arrival_time': '2025-03-22T12:09:00+03:00',
+  'duration': 136140.0,
+  'price': None,
+  'from': 'Симферополь-Пасс.',
+  'to': 'Москва (Павелецкий вокзал)',
+  'name': 'Симферополь — Москва',
+  'transport_type': 'train'},
+ {'departure_time': '2025-03-20T21:10:00+03:00',
+  'arrival_time': '2025-03-22T13:22:00+03:00',
+  'duration': 144720.0,
+  'price': None,
+  'from': 'Симферополь-Пасс.',
+  'to': 'Москва (Павелецкий вокзал)',
+  'name': 'Симферополь — Москва',
+  'transport_type': 'train'}]'''

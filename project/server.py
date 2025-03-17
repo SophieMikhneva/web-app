@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from datetime import datetime
-from brew import get_data_strait, get_data_transfer, sort_routes
+from brew import get_data_strait, get_data_transfer, sort_routes  # Используем твой brew.py
 
 HOST = "localhost"
 PORT = 8080
@@ -29,18 +29,14 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             # Проверка на прошедшую дату
             if datetime.strptime(date, "%Y-%m-%d") < datetime.today():
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "На эту дату маршрутов нет."}).encode("utf-8"))
+                self.send_error(400, "На эту дату маршрутов нет.")
                 return
 
-            print(f"Получаем данные для {departure} → {arrival} на {date}...")
+            print(f"[LOG] Запрос маршрутов: {departure} → {arrival}, дата: {date}")
 
-            # Получаем маршруты, передавая exclusions и priorities
-            direct_routes = get_data_strait(departure, arrival, date, exclusions, priorities)
-            transfer_routes = get_data_transfer(departure, arrival, date, exclusions, priorities)
+            # Получаем маршруты
+            direct_routes = get_data_strait(departure, arrival, date)
+            transfer_routes = get_data_transfer(departure, arrival, date)
 
             # Проверяем, что данные не `None`
             if direct_routes is None:
@@ -48,17 +44,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             if transfer_routes is None:
                 transfer_routes = {"segments": []}
 
-            # Объединяем и сортируем маршруты
+            # Объединяем маршруты и сортируем
             all_routes = direct_routes.get("segments", []) + transfer_routes.get("segments", [])
             sorted_routes = sort_routes(all_routes, sort_by="time", transport_priority=priorities, exclude_transport=exclusions)
 
             # Проверяем, есть ли маршруты
             if not sorted_routes:
-                self.send_response(404)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "Маршрутов не найдено."}).encode("utf-8"))
+                self.send_error(404, "Маршрутов не найдено.")
                 return
 
             # Формируем JSON-ответ
@@ -78,6 +70,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode("utf-8"))
+
+    def send_error(self, code, message):
+        """ Вспомогательная функция для отправки ошибок """
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": message}).encode("utf-8"))
 
 def run():
     server = HTTPServer((HOST, PORT), RequestHandler)
