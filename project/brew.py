@@ -48,7 +48,6 @@ def extract_russian_cities(data):
 
     return russian_cities
 
-# Пример использования
 russian_cities = extract_russian_cities(station)
 #Найдем большие города, через которые будет интересно делать пересадки
 big_towns = {'Калининград': 'c22',
@@ -253,10 +252,21 @@ def sort_routes(segments, sort_by='time', transport_priority=None, exclude_trans
         s for s in segments
         if s['thread']['transport_type'] not in exclude_transport
     ]
-
     # Определение порядка приоритета транспорта
     transport_order = {transport: idx for idx, transport in enumerate(transport_priority)}
     default_priority = len(transport_priority)
+
+    # Создание цены
+
+    for seg in segments:
+        thread = seg['thread']
+        tickets_info = seg.get('tickets_info', {})
+
+        price_modificator = 152.1739 * (thread['transport_type'] == 'train') + 3513.4163 * (
+                    thread['transport_type'] == 'plane') + 213.14 * (thread['transport_type'] == 'bus') + 223.64 * (
+                                        thread['transport_type'] == 'suburban')
+        seg['price'] = tickets_info.get('price') if tickets_info == None else int(
+            seg['duration'] / 3600 * price_modificator // 1),
 
     # Функция для получения ключа сортировки
     def get_sort_key(segment):
@@ -284,13 +294,19 @@ def sort_routes(segments, sort_by='time', transport_priority=None, exclude_trans
         from_station = seg['from']['title']
         to_station = seg['to']['title']
         tickets_info = seg.get('tickets_info', {})
+        price_modificator = 152.1739 * (thread['transport_type'] == 'train') + 3513.4163 * (
+                    thread['transport_type'] == 'plane') + 213.14 * (thread['transport_type'] == 'bus') + 223.64 * (
+                                        thread['transport_type'] == 'suburban')
 
         result.append({
-            'departure_time': seg['departure'],
-            'arrival_time': seg['arrival'],
-            'duration': seg['duration'],
-            # 'duration': f'{int(seg['duration'])//60//60//24} дней, {int(seg['duration'])//60//60%24} часов, {int(seg['duration'])//60%60%24} минут',
-            'price': tickets_info.get('price') if tickets_info else None,
+            'departure_time': (seg['departure'].split('T')[0], seg['departure'].split('T')[1].split('+')[0],
+                               'UTC: +' + seg['departure'].split('T')[1].split('+')[1]),
+            'arrival_time': (seg['arrival'].split('T')[0], seg['arrival'].split('T')[1].split('+')[0],
+                             'UTC: +' + seg['arrival'].split('T')[1].split('+')[1]),
+            'duration': str(int(seg['duration'] // 3600 // 24)) + ' дней, ' + str(
+                int(seg['duration'] // 3600 % 24)) + ' часов',
+            'price': tickets_info.get('price') if tickets_info == None else int(
+                seg['duration'] / 3600 * price_modificator // 1),
             'from': from_station,
             'to': to_station,
             'name': thread['title'],
@@ -300,6 +316,7 @@ def sort_routes(segments, sort_by='time', transport_priority=None, exclude_trans
     return result
 
 
+
 #Функция для получения расписания стыковочных рейсов, если отсутствуют прямые
 
 def get_data_transfer(from_town, to_town, time):
@@ -307,7 +324,7 @@ def get_data_transfer(from_town, to_town, time):
     code_to_town = get_code(to_town)
     data_strait = get_data_strait(from_town, to_town, time)
     url_transfer = f"https://api.rasp.yandex.net/v3.0/search/?apikey=c219b14b-3858-49c3-b674-05efd8b6175b&format=json&from={code_from_town}&to={code_to_town}&lang=ru_RU&page=1&date={time}&transfers=True"
-    if data_strait['pagination']['total']==0:
+    if data_strait['pagination']['total'] == 0:
         response = requests.get(url_transfer)
         if response.status_code == 200:
             data_transfer = response.json()
@@ -316,7 +333,125 @@ def get_data_transfer(from_town, to_town, time):
             return("Ошибка:", response.status_code)
 
 
-#Пример работы всей этой ерунды для прямого рейса
+#Нахождение дня через i дней
+from datetime import datetime, timedelta
+
+def next_day(date_str, i):
+
+
+# Преобразование строки в объект datetime
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+
+# Добавление дня
+    new_date_obj = date_obj + timedelta(days=1)
+
+# Преобразование обратно в строку
+    new_date_str = new_date_obj.strftime("%Y-%m-%d")
+
+    return new_date_str
+
+#нахождение разницы во времени
+from datetime import datetime, timezone
+from dateutil.parser import parse
+from dateutil.tz import tzoffset
+
+
+def parse_custom_datetime(datetime_list):
+    #Парсинг даты из формата ['2025-03-20', '21:10:00', 'UTC: +03:00']
+    date_str, time_str, offset_str = datetime_list
+    offset = int(offset_str.split(":")[-1].strip().replace("+", "").split(":")[0])
+    return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=tzoffset(None, offset * 3600)
+    )
+
+
+def get_time_transfer_minutes(date1, date2):
+    dt1 = parse_custom_datetime(date1)
+    dt2 = parse_custom_datetime(date2)
+    return (dt2 - dt1).total_seconds() / 60
+
+#Функция для нахождения маршрута через ближайшие города
+def get_data_nearby(from_town, to_town, time, sort):
+    data_nearby_time = []
+    data_nearby_price = []
+    distance = get_distance(from_town, to_town)
+    nearby_town = get_nearby_town(from_town, to_town, distance, big_towns.keys())
+
+    for town in nearby_town:
+        # Получаем данные для первого сегмента маршрута
+        nearby_1 = get_data_strait(from_town, town, time)
+
+        # Проверяем, что полученные данные не None и содержат 'segments'
+        if nearby_1 != ('Ошибка:', 400) and len(nearby_1) > 0 and 'segments' in nearby_1 and len(
+                nearby_1['segments']) > 0:  # and and isinstance(nearby_1, dict) and 'segments' in nearby_1:
+
+            time2 = next_day(time, (nearby_1['segments'][0]['duration'] // 60 // 60 // 24) + 1)
+
+
+            # Получаем данные для второго сегмента маршрута
+            nearby_2 = get_data_strait(town, to_town, time2)
+
+            # Проверяем, что данные для второго сегмента получены корректно
+            if nearby_2 != ('Ошибка:', 400) and len(
+                    nearby_2) > 0 and 'segments' in nearby_2:  # len(nearby_2['segments'])>0:
+                # Дальнейшая обработка данных
+                if 'segments' in nearby_1 and len(nearby_1['segments']) > 0:
+                    nearby_sort_time_1 = sort_routes(nearby_1['segments'], 'time')
+                    nearby_sort_price_1 = sort_routes(nearby_1['segments'], 'price')
+                else:
+                    break
+
+                if 'segments' in nearby_2 and len(nearby_2['segments']) > 0:
+                    nearby_sort_time_2 = sort_routes(nearby_2['segments'], 'time')
+                    nearby_sort_price_2 = sort_routes(nearby_2['segments'], 'price')
+                else:
+                    break
+
+                for k in nearby_sort_time_1:
+                    for j in nearby_sort_time_2:
+                        transfer = get_time_transfer_minutes(k['arrival_time'], j['departure_time'])
+                        transports = [k['transport_type'], j['transport_type']]
+
+                        if 'Москва' in [town, from_town, to_town] or 'Санкт-Петербург' in [town, from_town, to_town]:
+                            min_transfer = 6 * 60
+                        elif 'plane' in transports:
+                            min_transfer = 4 * 60
+                        else:
+                            min_transfer = 2 * 60
+
+                        if transfer >= min_transfer:
+                            data_nearby_time.append({'first_trip': k, 'transfer': str((transfer)//60)+' часов', 'second trip': j})
+                            break
+
+                for k in nearby_sort_price_1:
+                    for j in nearby_sort_price_2:
+                        transfer = get_time_transfer_minutes(k['arrival_time'], j['departure_time'])
+                        transports = [k['transport_type'], j['transport_type']]
+
+                        if 'Москва' in [town, from_town, to_town] or 'Санкт-Петербург' in [town, from_town, to_town]:
+                            min_transfer = 6 * 60
+                        elif 'plane' in transports:
+                            min_transfer = 4 * 60
+                        else:
+                            min_transfer = 2 * 60
+
+                        if transfer >= min_transfer:
+                            data_nearby_price.append(
+                                {'first_trip': k, 'transfer': str((transfer)//60)+' часов', 'second trip': j})  # {k, transfer, j})
+                            break
+            else:
+                continue
+        else:
+            continue
+
+
+    if sort == 'time':
+        return data_nearby_time
+    else:
+        return data_nearby_price
+
+
+#Пример работы для прямого рейса
 from_town = 'Симферополь'
 to_town = 'Москва'
 time = '2025-03-20'
@@ -326,43 +461,238 @@ time = '2025-03-20'
 data = get_data_strait(from_town, to_town, time)
 sort_routes(data['segments'], sort_by='time')
 
-'''[{'departure_time': '2025-03-20T18:05:00+03:00',
-  'arrival_time': '2025-03-21T23:50:00+03:00',
-  'duration': 107100.0,
-  'price': None,
+#Вывод
+'''[{'departure_time': ('2025-03-20', '18:05:00', 'UTC: +03:00'),
+  'arrival_time': ('2025-03-21', '23:50:00', 'UTC: +03:00'),
+  'duration': '1 дней, 5 часов',
+  'price': 4527,
   'from': 'Симферополь-Пасс.',
   'to': 'Москва (Казанский вокзал)',
   'name': 'Симферополь — Москва',
   'transport_type': 'train'},
- {'departure_time': '2025-03-20T19:50:00+03:00',
-  'arrival_time': '2025-03-22T06:10:00+03:00',
-  'duration': 123600.0,
-  'price': None,
+ {'departure_time': ('2025-03-20', '19:50:00', 'UTC: +03:00'),
+  'arrival_time': ('2025-03-22', '06:10:00', 'UTC: +03:00'),
+  'duration': '1 дней, 10 часов',
+  'price': 5224,
   'from': 'Симферополь-Пасс.',
   'to': 'Москва (Казанский вокзал)',
   'name': 'Симферополь — Москва',
   'transport_type': 'train'},
- {'departure_time': '2025-03-20T23:10:00+03:00',
-  'arrival_time': '2025-03-22T10:00:00+03:00',
-  'duration': 125400.0,
-  'price': None,
+ {'departure_time': ('2025-03-20', '23:10:00', 'UTC: +03:00'),
+  'arrival_time': ('2025-03-22', '10:00:00', 'UTC: +03:00'),
+  'duration': '1 дней, 10 часов',
+  'price': 5300,
   'from': 'Симферополь-Пасс.',
   'to': 'Москва (Казанский вокзал)',
   'name': 'Севастополь — Москва',
   'transport_type': 'train'},
- {'departure_time': '2025-03-20T22:20:00+03:00',
-  'arrival_time': '2025-03-22T12:09:00+03:00',
-  'duration': 136140.0,
-  'price': None,
+ {'departure_time': ('2025-03-20', '22:20:00', 'UTC: +03:00'),
+  'arrival_time': ('2025-03-22', '12:09:00', 'UTC: +03:00'),
+  'duration': '1 дней, 13 часов',
+  'price': 5754,
   'from': 'Симферополь-Пасс.',
   'to': 'Москва (Павелецкий вокзал)',
   'name': 'Симферополь — Москва',
   'transport_type': 'train'},
- {'departure_time': '2025-03-20T21:10:00+03:00',
-  'arrival_time': '2025-03-22T13:22:00+03:00',
-  'duration': 144720.0,
-  'price': None,
+ {'departure_time': ('2025-03-20', '21:10:00', 'UTC: +03:00'),
+  'arrival_time': ('2025-03-22', '13:22:00', 'UTC: +03:00'),
+  'duration': '1 дней, 16 часов',
+  'price': 6117,
   'from': 'Симферополь-Пасс.',
   'to': 'Москва (Павелецкий вокзал)',
   'name': 'Симферополь — Москва',
   'transport_type': 'train'}]'''
+
+#Для ближайших городов
+get_data_nearby('Кисловодск', 'Москва', '2025-03-20', 'price')
+
+#Вывод
+'''[{'first_trip': {'departure_time': ('2025-03-20', '06:15:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '09:21:00', 'UTC: +03:00'),
+   'duration': '0 дней, 3 часов',
+   'price': 471,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Ростов-на-Дону',
+   'transport_type': 'train'},
+  'transfer': '15.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '00:34:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '21:50:00', 'UTC: +03:00'),
+   'duration': '0 дней, 21 часов',
+   'price': 3236,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Казанский вокзал)',
+   'name': 'Кисловодск — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '10:16:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '15:39:00', 'UTC: +03:00'),
+   'duration': '0 дней, 5 часов',
+   'price': 819,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Москва',
+   'transport_type': 'train'},
+  'transfer': '8.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '00:34:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '21:50:00', 'UTC: +03:00'),
+   'duration': '0 дней, 21 часов',
+   'price': 3236,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Казанский вокзал)',
+   'name': 'Кисловодск — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '12:39:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '17:20:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 712,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Симферополь',
+   'transport_type': 'train'},
+  'transfer': '7.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '00:34:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '21:50:00', 'UTC: +03:00'),
+   'duration': '0 дней, 21 часов',
+   'price': 3236,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Казанский вокзал)',
+   'name': 'Кисловодск — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '13:49:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '18:42:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 743,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Санкт-Петербург',
+   'transport_type': 'train'},
+  'transfer': '7.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '01:49:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '08:00:00', 'UTC: +03:00'),
+   'duration': '1 дней, 6 часов',
+   'price': 4593,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Павелецкий вокзал)',
+   'name': 'Нальчик — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '15:19:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '19:48:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 682,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Тюмень',
+   'transport_type': 'train'},
+  'transfer': '6.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '01:49:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '08:00:00', 'UTC: +03:00'),
+   'duration': '1 дней, 6 часов',
+   'price': 4593,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Павелецкий вокзал)',
+   'name': 'Нальчик — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '16:41:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '21:31:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 735,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Адлер',
+   'transport_type': 'train'},
+  'transfer': '6.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '04:28:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '10:50:00', 'UTC: +03:00'),
+   'duration': '1 дней, 6 часов',
+   'price': 4621,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Казанский вокзал)',
+   'name': 'Грозный — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '17:44:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '22:20:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 699,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Нижний Новгород',
+   'transport_type': 'train'},
+  'transfer': '6.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '04:28:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '10:50:00', 'UTC: +03:00'),
+   'duration': '1 дней, 6 часов',
+   'price': 4621,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Казанский вокзал)',
+   'name': 'Грозный — Москва',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '18:50:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-20', '23:41:00', 'UTC: +03:00'),
+   'duration': '0 дней, 4 часов',
+   'price': 738,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Тында',
+   'transport_type': 'train'},
+  'transfer': '14.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '13:52:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '19:35:00', 'UTC: +03:00'),
+   'duration': '1 дней, 5 часов',
+   'price': 4522,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Восточный вокзал)',
+   'name': 'Владикавказ — Санкт-Петербург',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '20:40:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '00:30:00', 'UTC: +03:00'),
+   'duration': '0 дней, 3 часов',
+   'price': 583,
+   'from': 'Кисловодск',
+   'to': 'Армавир-1-Ростовский',
+   'name': 'Кисловодск — Москва',
+   'transport_type': 'train'},
+  'transfer': '13.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '13:52:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-22', '19:35:00', 'UTC: +03:00'),
+   'duration': '1 дней, 5 часов',
+   'price': 4522,
+   'from': 'Армавир-1-Ростовский',
+   'to': 'Москва (Восточный вокзал)',
+   'name': 'Владикавказ — Санкт-Петербург',
+   'transport_type': 'train'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '15:19:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '12:41:00', 'UTC: +03:00'),
+   'duration': '0 дней, 21 часов',
+   'price': 3251,
+   'from': 'Кисловодск',
+   'to': 'Волгоград-1',
+   'name': 'Кисловодск — Тюмень',
+   'transport_type': 'train'},
+  'transfer': '8.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '20:50:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '23:00:00', 'UTC: +03:00'),
+   'duration': '0 дней, 2 часов',
+   'price': 7612,
+   'from': 'Гумрак',
+   'to': 'Шереметьево',
+   'name': 'Волгоград — Москва',
+   'transport_type': 'plane'}},
+ {'first_trip': {'departure_time': ('2025-03-20', '18:50:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '12:49:00', 'UTC: +03:00'),
+   'duration': '0 дней, 17 часов',
+   'price': 2736,
+   'from': 'Кисловодск',
+   'to': 'Волгоград-1',
+   'name': 'Кисловодск — Тында',
+   'transport_type': 'train'},
+  'transfer': '8.0 часов',
+  'second trip': {'departure_time': ('2025-03-21', '20:50:00', 'UTC: +03:00'),
+   'arrival_time': ('2025-03-21', '23:00:00', 'UTC: +03:00'),
+   'duration': '0 дней, 2 часов',
+   'price': 7612,
+   'from': 'Гумрак',
+   'to': 'Шереметьево',
+   'name': 'Волгоград — Москва',
+   'transport_type': 'plane'}}]
+from_town = 'Симферополь'
+to_town = 'Москва'''
